@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>General Relativity — Interactive</title>
+  <script>p5.disableFriendlyErrors = true;</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #030308;
+      font-family: 'Space Mono', monospace;
+      color: #e8dcc8;
+      user-select: none;
+    }
+    #canvas-container {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #canvas-container canvas { display: block; }
+
+    /* ── Header ─────────────────────────────────────────── */
+    #header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 20;
+      padding: 22px 32px 0;
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      pointer-events: none;
+    }
+    #header h1 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: clamp(18px, 2.2vw, 26px);
+      letter-spacing: -0.03em;
+      color: #f5efe0;
+      text-shadow: 0 0 40px rgba(255,200,100,0.3);
+    }
+    #header p {
+      font-size: clamp(10px, 1.1vw, 13px);
+      color: #7a7060;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Bottom Panel ─────────────────────────────────── */
+    #bottom {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 20;
+      display: flex;
+      gap: 12px;
+      padding: 16px 24px 20px;
+      background: linear-gradient(to top, rgba(3,3,8,0.95) 0%, rgba(3,3,8,0.6) 60%, transparent 100%);
+      justify-content: center;
+    }
+    .concept-card {
+      flex: 1;
+      max-width: 240px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 14px 16px;
+      backdrop-filter: blur(8px);
+    }
+    .concept-card h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #c8a96e;
+      margin-bottom: 6px;
+    }
+    .concept-card p {
+      font-size: 10.5px;
+      line-height: 1.6;
+      color: #8a8475;
+    }
+    .concept-card em {
+      color: #b8b0a0;
+      font-style: normal;
+    }
+
+    /* ── Hint ──────────────────────────────────────────── */
+    #hint {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 15;
+      font-size: 11px;
+      color: rgba(200,185,150,0.35);
+      letter-spacing: 0.06em;
+      pointer-events: none;
+      transition: opacity 1s ease;
+    }
+
+    /* ── Mode Badge ────────────────────────────────────── */
+    #mode-badge {
+      position: fixed;
+      top: 22px;
+      right: 32px;
+      z-index: 20;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #6a6050;
+      pointer-events: none;
+    }
+    #mode-badge span {
+      color: #c8a96e;
+    }
+  </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="header">
+  <h1>General Relativity</h1>
+  <p>Mass curves spacetime — drag the sun to explore</p>
+</div>
+
+<div id="hint" id="hint">drag the sun to warp spacetime</div>
+
+<div id="mode-badge">mode: <span id="mode-label">curved space</span></div>
+
+<div id="bottom">
+  <div class="concept-card">
+    <h3>① Spacetime Grid</h3>
+    <p>The universe has a 4D fabric. A <em>flat</em> grid shows no gravity — objects move in straight lines. Here the grid is distorted by the sun.</p>
+  </div>
+  <div class="concept-card">
+    <h3>② Gravity = Geometry</h3>
+    <p>Mass tells spacetime how to curve. The steeper the warp, the stronger the pull. Earth's orbit is a <em>straight line</em> through curved space.</p>
+  </div>
+  <div class="concept-card">
+    <h3>③ Light Bends Too</h3>
+    <p>Even light follows the curve. Near massive objects, starlight bends — this is how we discover hidden black holes and weigh stars.</p>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════
+const CONFIG = {
+  bgColor:       [3, 3, 8],
+  gridColor:     [40, 36, 55],
+  gridHighlight: [70, 60, 110],
+  sunCore:       [255, 210, 80],
+  sunGlow:       [255, 140, 20],
+  particleColor: [200, 180, 255],
+  starColor:     [240, 235, 210],
+  orbitColor:    [100, 100, 180],
+  PARTICLE_MODE: 0,
+  GRID_MODE: 1,
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+let mode = CONFIG.GRID_MODE;
+let particles = [];
+let stars = [];
+let dragSun = false;
+let hintVisible = true;
+let hintFadeStart = 0;
+let t = 0;
+
+// Sun position and mass
+let sun = { x: 0, y: 0, r: 38, mass: 120 };
+// Schwarzschild-like warp strength (pixels for our viz)
+const K = 18000; // warping constant
+
+// ═══════════════════════════════════════════════════════════════
+//  CLASSES
+// ═══════════════════════════════════════════════════════════════
+
+class OrbitingParticle {
+  constructor(a, r, speed) {
+    this.a = a;          // angle
+    this.r = r;           // orbit radius
+    this.speed = speed;   // angular speed
+    this.size = random(1.2, 2.5);
+    this.trail = [];
+    this.trailLen = 60;
+    this.alive = true;
+  }
+
+  update() {
+    // Newtonian-ish: angular speed decreases with radius
+    // But add a tiny GR precession effect (faster at smaller radii)
+    let grBoost = 1 + (80 / (this.r * this.r)) * 0.015;
+    this.a += this.speed * grBoost;
+
+    let pos = this.getPos();
+    this.trail.push(pos.copy());
+    if (this.trail.length > this.trailLen) this.trail.shift();
+  }
+
+  getPos() {
+    let x = Math.cos(this.a) * this.r;
+    let y = Math.sin(this.a) * this.r;
+    return createVector(x, y);
+  }
+
+  // Gravitational deflection in warped space
+  deflect(cx, cy, k) {
+    let dx = this.r * Math.cos(this.a);
+    let dy = this.r * Math.sin(this.a);
+    let distSq = dx * dx + dy * dy;
+    let dist = Math.sqrt(distSq);
+    // warping factor: how much the path is bent toward sun
+    // G ∝ 1/r² effectively
+    let warpStrength = k / (distSq + 800);
+    // radial pull toward sun
+    let nx = -dx / dist;
+    let ny = -dy / dist;
+    this.a += warpStrength * 0.0015;
+  }
+
+  draw(p) {
+    // Trail
+    for (let i = 1; i < this.trail.length; i++) {
+      let alpha = Math.map(i, 0, this.trail.length, 0, 70);
+      let weight = Math.map(i, 0, this.trail.length, 0.3, 1.5);
+      p.stroke(180, 160, 255, alpha);
+      p.strokeWeight(weight);
+      p.line(this.trail[i-1].x, this.trail[i-1].y, this.trail[i].x, this.trail[i].y);
+    }
+    // Head
+    let pos = this.getPos();
+    p.noStroke();
+    p.fill(200, 180, 255, 230);
+    p.ellipse(pos.x, pos.y, this.size);
+  }
+}
+
+class Star {
+  constructor() {
+    this.x = random(-1, 1);   // normalized position
+    this.y = random(-1, 1);
+    this.size = random(0.5, 1.8);
+    this.twinkleSpeed = random(0.005, 0.02);
+    this.twinklePhase = random(0, Math.PI * 2);
+    this.baseAlpha = random(80, 200);
+  }
+
+  draw(p) {
+    let sx = this.x * p.width * 0.52;
+    let sy = this.y * p.height * 0.52;
+    let a = this.baseAlpha + Math.sin(t * this.twinkleSpeed * 60 + this.twinklePhase) * 40;
+    p.noStroke();
+    p.fill(240, 235, 210, a);
+    p.ellipse(sx, sy, this.size);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  P5 SETUP / DRAW
+// ═══════════════════════════════════════════════════════════════
+const sketch = (p) => {
+
+  p.setup = function () {
+    let w = window.innerWidth, h = window.innerHeight;
+    p.createCanvas(w, h);
+    p.pixelDensity(1);
+    p.colorMode(p.RGB, 255, 255, 255, 255);
+
+    sun.x = 0;
+    sun.y = 0;
+
+    // Spawn orbiting particles (inner system)
+    for (let i = 0; i < 55; i++) {
+      let r = random(55, 280);
+      let speed = random(0.004, 0.018) * (1 / Math.sqrt(r / 100));
+      particles.push(new OrbitingParticle(random(0, Math.PI * 2), r, speed));
+    }
+
+    // Background stars
+    for (let i = 0; i < 220; i++) {
+      stars.push(new Star());
+    }
+  };
+
+  p.draw = function () {
+    t = p.frameCount;
+    let w = p.width, h = p.height;
+
+    // Fade hint after 4 seconds
+    if (hintVisible && t > 240) {
+      let hintEl = document.getElementById('hint');
+      if (hintEl) hintEl.style.opacity = '0';
+      hintVisible = false;
+    }
+
+    p.background(...CONFIG.bgColor);
+
+    p.translate(w / 2, h / 2);
+
+    // Interactive mode toggle
+    if (p.keyIsPressed && p.key === ' ') {
+      mode = (mode === CONFIG.GRID_MODE) ? CONFIG.PARTICLE_MODE : CONFIG.GRID_MODE;
+      document.getElementById('mode-label').textContent =
+        mode === CONFIG.GRID_MODE ? 'curved space' : 'particle orbits';
+      p.key = '';
+    }
+
+    // Draw the appropriate visualization
+    if (mode === CONFIG.GRID_MODE) {
+      drawGrid(p);
+      drawParticlesGridMode(p);
+    } else {
+      drawParticlesOrbitMode(p);
+    }
+
+    drawSun(p);
+    drawStars(p);
+    drawUI(p);
+
+    // Update sun drag
+    if (dragSun) {
+      sun.x = p.mouseX - p.width / 2;
+      sun.y = p.mouseY - p.height / 2;
+    }
+  };
+
+  // ─── GRID VISUALIZATION ─────────────────────────────────────
+  function drawGrid(p) {
+    let cols = 28, rows = 20;
+    let cellW = p.width / cols;
+    let cellH = p.height / rows;
+
+    // Precompute warp for each grid intersection
+    let warpField = [];
+    for (let i = 0; i <= cols; i++) {
+      warpField[i] = [];
+      for (let j = 0; j <= rows; j++) {
+        let gx = i * cellW - p.width / 2 - cellW / 2;
+        let gy = j * cellH - p.height / 2 - cellH / 2;
+        let warp = computeWarp(gx, gy);
+        warpField[i][j] = warp;
+      }
+    }
+
+    // Draw warped grid lines
+    p.noFill();
+    for (let i = 0; i <= cols; i++) {
+      for (let j = 0; j <= rows; j++) {
+        let wp = warpField[i][j];
+
+        // Distance from sun
+        let dist = Math.sqrt(wp.dx * wp.dx + wp.dy * wp.dy);
+
+        // Grid line: horizontal
+        if (i < cols) {
+          let nxt = warpField[i + 1][j];
+          let distNxt = Math.sqrt(nxt.dx * nxt.dx + nxt.dy * nxt.dy);
+          let alpha = Math.max(0, Math.min(90, 90 - dist * 0.04));
+          let sw = Math.max(0.3, Math.min(1.2, 1.2 - dist * 0.002));
+          p.stroke(50, 45, 90, alpha);
+          p.strokeWeight(sw);
+          p.line(wp.x, wp.y, nxt.x, nxt.y);
+        }
+
+        // Grid line: vertical
+        if (j < rows) {
+          let nxt = warpField[i][j + 1];
+          let distNxt = Math.sqrt(nxt.dx * nxt.dx + nxt.dy * nxt.dy);
+          let alpha = Math.max(0, Math.min(90, 90 - dist * 0.04));
+          let sw = Math.max(0.3, Math.min(1.2, 1.2 - dist * 0.002));
+          p.stroke(50, 45, 90, alpha);
+          p.strokeWeight(sw);
+          p.line(wp.x, wp.y, nxt.x, nxt.y);
+        }
+
+        // Dot at intersection
+        let alpha = Math.max(0, Math.min(160, 160 - dist * 0.15));
+        let sz = Math.max(0.5, Math.min(2.5, 2.5 - dist * 0.004));
+        p.noStroke();
+        p.fill(80, 70, 140, alpha);
+        p.ellipse(wp.x, wp.y, sz);
+      }
+    }
+
+    // Highlight strongly warped region near sun
+    let sunDist = Math.sqrt(sun.x * sun.x + sun.y * sun.y);
+    let pulseR = sunDist + 60 + Math.sin(t * 0.05) * 8;
+    p.noFill();
+    p.stroke(100, 90, 180, 25);
+    p.strokeWeight(1);
+    p.ellipse(0, 0, pulseR * 2);
+  }
+
+  function drawParticlesGridMode(p) {
+    // Particles deflected by warped space (subtle path bending)
+    for (let particle of particles) {
+      let cx = sun.x, cy = sun.y;
+      let warp = computeWarp(particle.r * Math.cos(particle.a), particle.r * Math.sin(particle.a));
+      particle.deflect(cx, cy, K);
+      particle.update();
+      particle.draw(p);
+    }
+  }
+
+  // ─── PARTICLE ORBIT VISUALIZATION ────────────────────────────
+  function drawParticlesOrbitMode(p) {
+    // Draw clean orbits with GR precession visible as a slight spiral
+    for (let particle of particles) {
+      particle.deflect(0, 0, K);
+      particle.update();
+      particle.draw(p);
+    }
+
+    // Draw faint orbital guides (static circles)
+    p.noFill();
+    for (let r = 80; r <= 280; r += 50) {
+      let alpha = 12 + Math.sin(t * 0.02 + r) * 5;
+      p.stroke(80, 70, 140, alpha);
+      p.strokeWeight(0.6);
+      p.ellipse(0, 0, r * 2);
+    }
+  }
+
+  // ─── SUN ─────────────────────────────────────────────────────
+  function drawSun(p) {
+    let cx = sun.x, cy = sun.y;
+
+    // Outer glow layers
+    for (let i = 5; i >= 1; i--) {
+      let r = sun.r + i * 22;
+      let a = Math.map(i, 5, 1, 3, 40);
+      p.noStroke();
+      p.fill(255, 140, 20, a);
+      p.ellipse(cx, cy, r * 2);
+    }
+
+    // Corona corona: ray spikes
+    p.push();
+    p.translate(cx, cy);
+    for (let i = 0; i < 16; i++) {
+      let angle = (i / 16) * Math.PI * 2 + t * 0.008;
+      let len = sun.r + 18 + Math.sin(t * 0.06 + i) * 10;
+      let x1 = Math.cos(angle) * sun.r;
+      let y1 = Math.sin(angle) * sun.r;
+      let x2 = Math.cos(angle) * len;
+      let y2 = Math.sin(angle) * len;
+      p.stroke(255, 200, 80, 30);
+      p.strokeWeight(1.5);
+      p.line(x1, y1, x2, y2);
+    }
+    p.pop();
+
+    // Core
+    let corePulse = sun.r + Math.sin(t * 0.08) * 2;
+    p.noStroke();
+    p.fill(255, 235, 120);
+    p.ellipse(cx, cy, corePulse * 2);
+    p.fill(255, 250, 220);
+    p.ellipse(cx, cy, corePulse * 1.1);
+
+    // Drag handle
+    p.noFill();
+    p.stroke(255, 220, 100, 60);
+    p.strokeWeight(1);
+    p.ellipse(cx, cy, sun.r * 2 + 14);
+  }
+
+  // ─── BACKGROUND STARS ────────────────────────────────────────
+  function drawStars(p) {
+    for (let s of stars) s.draw(p);
+  }
+
+  // ─── UI HINTS ────────────────────────────────────────────────
+  function drawUI(p) {
+    // "press space" hint
+    if (t % 600 < 300) {
+      p.noStroke();
+      p.fill(100, 90, 70, 150);
+      p.textSize(10);
+      p.textAlign(p.LEFT);
+      p.textFont('Space Mono');
+      p.text('SPACE  ·  toggle mode', -p.width / 2 + 20, p.height / 2 - 14);
+    }
+  }
+
+  // ─── CORE WARP MATH ──────────────────────────────────────────
+  function computeWarp(gx, gy) {
+    // Total offset from sun center
+    let dx = gx - sun.x;
+    let dy = gy - sun.y;
+    let distSq = dx * dx + dy * dy;
+    let dist = Math.sqrt(distSq);
+
+    if (dist < 1) dist = 1;
+
+    // Schwarzschild-like radial deflection
+    // dr/dθ ∝ 1/r²  → the smaller the radius, the more bent the path
+    let factor = K / (distSq + 200);
+
+    // Pull toward sun (curved spacetime)
+    let wx = sun.x + dx * (1 + factor);
+    let wy = sun.y + dy * (1 + factor);
+
+    return { x: wx, y: wy, dx, dy, dist };
+  }
+
+  // ─── INPUT ────────────────────────────────────────────────────
+  p.mousePressed = function () {
+    let mx = p.mouseX - p.width / 2;
+    let my = p.mouseY - p.height / 2;
+    if (dist2(mx, my, sun.x, sun.y) < (sun.r + 20) * (sun.r + 20)) {
+      dragSun = true;
+      // Hide hint
+      let h = document.getElementById('hint');
+      if (h) h.style.opacity = '0';
+      hintVisible = false;
+    }
+  };
+
+  p.mouseReleased = function () { dragSun = false; };
+
+  p.windowResized = function () {
+    p.resizeCanvas(window.innerWidth, window.innerHeight);
+  };
+};
+
+function dist2(x1, y1, x2, y2) {
+  let dx = x2 - x1, dy = y2 - y1;
+  return dx * dx + dy * dy;
+}
+
+// Boot
+new p5(sketch, 'canvas-container');
+</script>
+</body>
+</html>
